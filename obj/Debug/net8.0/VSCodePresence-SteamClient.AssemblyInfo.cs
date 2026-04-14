@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VSCodePresence-SteamClient")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e20b7ce30089fcc6bf08ee57a0df51a255013826")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+eea9648159f58933d94dc9310c6d86c3397e735a")]
 [assembly: System.Reflection.AssemblyProductAttribute("VSCodePresence-SteamClient")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VSCodePresence-SteamClient")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

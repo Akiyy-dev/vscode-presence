@@ -8,6 +8,8 @@ namespace VSCodePresenceSteamClient;
 
 internal static class Program
 {
+    private const int TestAppId = 480;
+
     private static async Task<int> Main()
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -23,11 +25,12 @@ internal static class Program
             return 1;
         }
 
-        if (settings.AppId <= 0)
+        if (settings.AppId != TestAppId)
         {
-            Console.WriteLine("AppId must be greater than 0 in appsettings.json.");
-            return 1;
+            Console.WriteLine($"Configured AppId {settings.AppId} is ignored for local testing. Forcing AppId {TestAppId}.");
         }
+
+        EnsureSteamAppIdFile(TestAppId);
 
         using var cancellationTokenSource = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
@@ -41,21 +44,21 @@ internal static class Program
             }
         };
 
-        var appId = new AppId_t((uint)settings.AppId);
+        var appId = new AppId_t(TestAppId);
         if (SteamAPI.RestartAppIfNecessary(appId))
         {
             Console.WriteLine("Steam requested the process to restart under Steam.");
             return 0;
         }
 
-        Console.WriteLine($"Initializing SteamAPI for AppId {settings.AppId}...");
+        Console.WriteLine($"Initializing SteamAPI for AppId {TestAppId}...");
         if (!SteamAPI.Init())
         {
             Console.WriteLine("SteamAPI.Init failed. Make sure Steam is running and the AppId is valid.");
             return 1;
         }
 
-        var richPresenceManager = new RichPresenceManager(settings.PresenceDisplayToken);
+        var richPresenceManager = new RichPresenceManager();
         var webSocketTask = RunWebSocketClientAsync(settings, richPresenceManager, cancellationTokenSource.Token);
         var callbackIntervalMs = Math.Max(16, settings.UpdateIntervalMs);
 
@@ -102,6 +105,20 @@ internal static class Program
             .Build();
 
         return configuration.Get<AppSettings>() ?? new AppSettings();
+    }
+
+    private static void EnsureSteamAppIdFile(int appId)
+    {
+        var filePath = Path.Combine(AppContext.BaseDirectory, "steam_appid.txt");
+
+        if (File.Exists(filePath))
+        {
+            Console.WriteLine($"steam_appid.txt already exists at {filePath}.");
+            return;
+        }
+
+        File.WriteAllText(filePath, appId.ToString());
+        Console.WriteLine($"Created steam_appid.txt with AppId {appId}.");
     }
 
     private static async Task RunWebSocketClientAsync(
@@ -231,18 +248,11 @@ internal static class Program
                 return;
             }
 
-            if (!root.TryGetProperty("version", out var versionElement) ||
-                versionElement.ValueKind != JsonValueKind.Number ||
+            if (root.TryGetProperty("version", out var versionElement) &&
+                versionElement.ValueKind == JsonValueKind.Number &&
                 versionElement.GetInt32() != 1)
             {
-                Console.WriteLine("Ignoring status message because version is missing or unsupported.");
-                return;
-            }
-
-            if (!root.TryGetProperty("timestamp", out var timestampElement) ||
-                timestampElement.ValueKind != JsonValueKind.String)
-            {
-                Console.WriteLine("Ignoring status message because timestamp is missing.");
+                Console.WriteLine("Ignoring status message because version is unsupported.");
                 return;
             }
 
@@ -250,6 +260,7 @@ internal static class Program
                 ? ConvertJsonObjectToDictionary(payloadElement)
                 : new Dictionary<string, object?>();
 
+            Console.WriteLine($"Received status payload with {payload.Count} field(s).");
             richPresenceManager.UpdatePresence(payload);
             Console.WriteLine($"Rich Presence updated with {payload.Count} fields");
         }
@@ -290,13 +301,11 @@ internal static class Program
 
 internal sealed class AppSettings
 {
-    public int AppId { get; init; }
+    public int AppId { get; init; } = 480;
 
     public string WebSocketUrl { get; init; } = "ws://127.0.0.1:31337";
 
     public int ReconnectIntervalMs { get; init; } = 3000;
 
     public int UpdateIntervalMs { get; init; } = 1000;
-
-    public string PresenceDisplayToken { get; init; } = "#VSCodeStatus";
 }
