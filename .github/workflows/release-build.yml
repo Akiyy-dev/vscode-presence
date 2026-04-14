@@ -1,0 +1,104 @@
+name: Release Build
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Validate Release Inputs
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify required files
+        shell: pwsh
+        run: |
+          $requiredFiles = @(
+            'VSCodePresence-SteamClient.csproj',
+            'appsettings.json',
+            'native/win-x64/steam_api64.dll'
+          )
+
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path $file)) {
+              throw "Required file missing: $file"
+            }
+          }
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build release configuration
+        run: dotnet build --configuration Release --no-restore
+
+  publish:
+    name: Publish And Attach Asset
+    runs-on: windows-latest
+    needs: validate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish win-x64 build
+        run: dotnet publish VSCodePresence-SteamClient.csproj --configuration Release --runtime win-x64 --self-contained false --output publish/win-x64
+
+      - name: Verify published output
+        shell: pwsh
+        run: |
+          $requiredOutputs = @(
+            'publish/win-x64/VSCodePresence-SteamClient.exe',
+            'publish/win-x64/VSCodePresence-SteamClient.dll',
+            'publish/win-x64/appsettings.json',
+            'publish/win-x64/steam_api64.dll'
+          )
+
+          foreach ($file in $requiredOutputs) {
+            if (-not (Test-Path $file)) {
+              throw "Published output missing: $file"
+            }
+          }
+
+      - name: Create release archive
+        id: package
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event.release.tag_name }}') { '${{ github.event.release.tag_name }}' } else { 'manual' }
+          $assetName = "VSCodePresence-SteamClient-$tag-win-x64.zip"
+          Compress-Archive -Path publish/win-x64/* -DestinationPath $assetName -Force
+          "asset_name=$assetName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload asset to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.asset_name }}
+          fail_on_unmatched_files: true
+
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset_name }}
+          path: ${{ steps.package.outputs.asset_name }}
