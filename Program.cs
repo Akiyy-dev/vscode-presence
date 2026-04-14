@@ -31,6 +31,10 @@ internal static class Program
         }
 
         EnsureSteamAppIdFile(TestAppId);
+        if (!EnsureSteamApiBinaryPresent())
+        {
+            return 1;
+        }
 
         using var cancellationTokenSource = new CancellationTokenSource();
         Console.CancelKeyPress += (_, eventArgs) =>
@@ -45,16 +49,34 @@ internal static class Program
         };
 
         var appId = new AppId_t(TestAppId);
-        if (SteamAPI.RestartAppIfNecessary(appId))
+        try
         {
-            Console.WriteLine("Steam requested the process to restart under Steam.");
-            return 0;
+            if (SteamAPI.RestartAppIfNecessary(appId))
+            {
+                Console.WriteLine("Steam requested the process to restart under Steam.");
+                return 0;
+            }
+        }
+        catch (DllNotFoundException exception)
+        {
+            Console.WriteLine($"Failed to load steam_api64.dll before Steam restart check: {exception.Message}");
+            Console.WriteLine($"Expected native library at {Path.Combine(AppContext.BaseDirectory, "steam_api64.dll")}");
+            return 1;
         }
 
         Console.WriteLine($"Initializing SteamAPI for AppId {TestAppId}...");
-        if (!SteamAPI.Init())
+        try
         {
-            Console.WriteLine("SteamAPI.Init failed. Make sure Steam is running and the AppId is valid.");
+            if (!SteamAPI.Init())
+            {
+                Console.WriteLine("SteamAPI.Init failed. Make sure Steam is running and the AppId is valid.");
+                return 1;
+            }
+        }
+        catch (DllNotFoundException exception)
+        {
+            Console.WriteLine($"Failed to load steam_api64.dll during SteamAPI.Init: {exception.Message}");
+            Console.WriteLine($"Expected native library at {Path.Combine(AppContext.BaseDirectory, "steam_api64.dll")}");
             return 1;
         }
 
@@ -119,6 +141,21 @@ internal static class Program
 
         File.WriteAllText(filePath, appId.ToString());
         Console.WriteLine($"Created steam_appid.txt with AppId {appId}.");
+    }
+
+    private static bool EnsureSteamApiBinaryPresent()
+    {
+        var steamApi64Path = Path.Combine(AppContext.BaseDirectory, "steam_api64.dll");
+
+        if (File.Exists(steamApi64Path))
+        {
+            Console.WriteLine($"steam_api64.dll found at {steamApi64Path}.");
+            return true;
+        }
+
+        Console.WriteLine($"steam_api64.dll is missing from output directory: {steamApi64Path}");
+        Console.WriteLine("Build should copy this file from native/win-x64/steam_api64.dll into the output directory.");
+        return false;
     }
 
     private static async Task RunWebSocketClientAsync(
