@@ -49,7 +49,7 @@ dotnet restore
 dotnet build
 ```
 
-Published executable path:
+Build output path:
 
 ```text
 bin/Debug/net8.0/win-x64/
