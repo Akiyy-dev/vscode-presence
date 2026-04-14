@@ -23,16 +23,18 @@ internal sealed class RichPresenceManager
         var languageId = SetIfPresent(normalizedPayload, "languageId");
         var gitBranch = SetIfPresent(normalizedPayload, "gitBranch");
         var workspaceName = SetIfPresent(normalizedPayload, "workspaceName");
+        var debugType = SetIfPresent(normalizedPayload, "debugType");
+        var lineNumber = SetIfPresent(normalizedPayload, "lineNumber");
 
         // 这些字段可以直接透传给 Steam Rich Presence，键名保持与 VS Code 扩展发送值一致。
         // 后续如果 bridge 增加了新的 selectedStatusItems，可继续在这里按同样模式追加。
-        SetIfPresent(normalizedPayload, "lineNumber");
         SetIfPresent(normalizedPayload, "columnNumber");
-        SetIfPresent(normalizedPayload, "debugType");
         SetIfPresent(normalizedPayload, "openEditorsCount");
         SetIfPresent(normalizedPayload, "vscodeVersion");
         SetIfPresent(normalizedPayload, "themeName");
         SetIfPresent(normalizedPayload, "editingTimeInMinutes");
+
+        var statusText = "正在使用 VSCode";
 
         if (TryGetBoolean(normalizedPayload, "isDirty", out var isDirty))
         {
@@ -46,24 +48,50 @@ internal sealed class RichPresenceManager
 
             if (isDebugging)
             {
-                SteamFriends.SetRichPresence("status", "正在调试代码");
+                statusText = string.IsNullOrWhiteSpace(debugType)
+                    ? "正在调试代码"
+                    : $"正在调试 {debugType}";
             }
         }
-        else if (!string.IsNullOrWhiteSpace(currentFileName))
+
+        if (!isDebugging && !string.IsNullOrWhiteSpace(currentFileName))
         {
-            SteamFriends.SetRichPresence("status", $"正在编辑 {currentFileName}");
+            statusText = $"正在编辑 {currentFileName}";
+
+            if (!string.IsNullOrWhiteSpace(languageId))
+            {
+                statusText += $" | {languageId}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(gitBranch))
+            {
+                statusText += $" | {gitBranch}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(lineNumber))
+            {
+                statusText += $" | L{lineNumber}";
+            }
+
+            if (isDirty)
+            {
+                statusText += " | 未保存";
+            }
+        }
+        else if (!isDebugging && !string.IsNullOrWhiteSpace(workspaceName))
+        {
+            statusText = $"正在处理工作区 {workspaceName}";
+
+            if (!string.IsNullOrWhiteSpace(gitBranch))
+            {
+                statusText += $" | {gitBranch}";
+            }
         }
 
-        if (string.IsNullOrWhiteSpace(currentFileName) &&
-            string.IsNullOrWhiteSpace(languageId) &&
-            string.IsNullOrWhiteSpace(gitBranch) &&
-            string.IsNullOrWhiteSpace(workspaceName) &&
-            !TryGetBoolean(normalizedPayload, "isDebugging", out _))
-        {
-            SteamFriends.SetRichPresence("status", "正在使用 VSCode");
-        }
+        SteamFriends.SetRichPresence("steam_display", statusText);
+        SteamFriends.SetRichPresence("status", statusText);
 
-        Console.WriteLine($"[RichPresence] 更新成功 | 文件: {currentFileName ?? "-"} | 语言: {languageId ?? "-"} | 分支: {gitBranch ?? "-"} | 工作区: {workspaceName ?? "-"}");
+        Console.WriteLine($"[RichPresence] 更新成功 | 状态: {statusText} | 文件: {currentFileName ?? "-"} | 语言: {languageId ?? "-"} | 分支: {gitBranch ?? "-"} | 工作区: {workspaceName ?? "-"}");
         SteamAPI.RunCallbacks();
     }
 
