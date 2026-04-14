@@ -8,8 +8,6 @@ namespace VSCodePresenceSteamClient;
 
 internal static class Program
 {
-    private const int TestAppId = 480;
-
     private static async Task<int> Main()
     {
         Console.OutputEncoding = Encoding.UTF8;
@@ -25,12 +23,21 @@ internal static class Program
             return 1;
         }
 
-        if (settings.AppId != TestAppId)
+        if (settings.AppId <= 0)
         {
-            Console.WriteLine($"Configured AppId {settings.AppId} is ignored for local testing. Forcing AppId {TestAppId}.");
+            Console.WriteLine("AppId must be greater than 0 in appsettings.json.");
+            return 1;
         }
 
-        EnsureSteamAppIdFile(TestAppId);
+        if (settings.EnsureSteamAppIdFile)
+        {
+            EnsureSteamAppIdFile(settings.AppId);
+        }
+        else
+        {
+            Console.WriteLine("Skipping steam_appid.txt synchronization because it is disabled in appsettings.json.");
+        }
+
         if (!EnsureSteamApiBinaryPresent())
         {
             return 1;
@@ -48,23 +55,31 @@ internal static class Program
             }
         };
 
-        var appId = new AppId_t(TestAppId);
-        try
+        var appId = new AppId_t((uint)settings.AppId);
+
+        if (settings.CallRestartAppIfNecessary)
         {
-            if (SteamAPI.RestartAppIfNecessary(appId))
+            try
             {
-                Console.WriteLine("Steam requested the process to restart under Steam.");
-                return 0;
+                if (SteamAPI.RestartAppIfNecessary(appId))
+                {
+                    Console.WriteLine("Steam requested the process to restart under Steam.");
+                    return 0;
+                }
+            }
+            catch (DllNotFoundException exception)
+            {
+                Console.WriteLine($"Failed to load steam_api64.dll before Steam restart check: {exception.Message}");
+                Console.WriteLine($"Expected native library at {Path.Combine(AppContext.BaseDirectory, "steam_api64.dll")}");
+                return 1;
             }
         }
-        catch (DllNotFoundException exception)
+        else
         {
-            Console.WriteLine($"Failed to load steam_api64.dll before Steam restart check: {exception.Message}");
-            Console.WriteLine($"Expected native library at {Path.Combine(AppContext.BaseDirectory, "steam_api64.dll")}");
-            return 1;
+            Console.WriteLine("Skipping SteamAPI.RestartAppIfNecessary because it is disabled in appsettings.json.");
         }
 
-        Console.WriteLine($"Initializing SteamAPI for AppId {TestAppId}...");
+        Console.WriteLine($"Initializing SteamAPI for AppId {settings.AppId}...");
         try
         {
             if (!SteamAPI.Init())
@@ -132,15 +147,24 @@ internal static class Program
     private static void EnsureSteamAppIdFile(int appId)
     {
         var filePath = Path.Combine(AppContext.BaseDirectory, "steam_appid.txt");
+        var expectedAppId = appId.ToString();
 
         if (File.Exists(filePath))
         {
-            Console.WriteLine($"steam_appid.txt already exists at {filePath}.");
+            var existingAppId = File.ReadAllText(filePath).Trim();
+            if (string.Equals(existingAppId, expectedAppId, StringComparison.Ordinal))
+            {
+                Console.WriteLine($"steam_appid.txt already matches AppId {expectedAppId} at {filePath}.");
+                return;
+            }
+
+            File.WriteAllText(filePath, expectedAppId);
+            Console.WriteLine($"Updated steam_appid.txt from '{existingAppId}' to '{expectedAppId}' at {filePath}.");
             return;
         }
 
-        File.WriteAllText(filePath, appId.ToString());
-        Console.WriteLine($"Created steam_appid.txt with AppId {appId}.");
+        File.WriteAllText(filePath, expectedAppId);
+        Console.WriteLine($"Created steam_appid.txt with AppId {expectedAppId}.");
     }
 
     private static bool EnsureSteamApiBinaryPresent()
@@ -339,6 +363,10 @@ internal static class Program
 internal sealed class AppSettings
 {
     public int AppId { get; init; } = 480;
+
+    public bool EnsureSteamAppIdFile { get; init; } = true;
+
+    public bool CallRestartAppIfNecessary { get; init; } = true;
 
     public string WebSocketUrl { get; init; } = "ws://127.0.0.1:31337";
 
